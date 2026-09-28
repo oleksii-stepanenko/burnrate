@@ -2,11 +2,11 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
-/// Starts Token Counter at login through a per-user launch agent
+/// Starts Burnrate at login through a per-user launch agent
 /// (`Contents/Library/LaunchAgents/<plist>`). launchd starts it with `--background`
 /// (menu bar only) and restarts it if it crashes, but not after a normal Quit.
 enum LoginItem {
-    static let plistName = "dev.local.tokencounter.agent.plist"
+    static let plistName = "io.stepanenko.Burnrate.agent.plist"
     private static var service: SMAppService { SMAppService.agent(plistName: plistName) }
     private static let configuredKey = "loginItemConfigured"
 
@@ -35,7 +35,7 @@ enum LoginItem {
         do {
             try setEnabled(true)
         } catch {
-            NSLog("TokenCounter: could not register login item: \(error)")
+            NSLog("Burnrate: could not register login item: \(error)")
         }
     }
 
@@ -68,19 +68,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         LoginItem.enableOnFirstRun()
         let center = NotificationCenter.default
+        // Observers are delivered on the main queue, so hopping onto the main actor is safe.
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
-            guard let w = note.object as? NSWindow, Dashboard.isDashboard(w) else { return }
-            MainActor.assumeIsolated { Dashboard.updateActivationPolicy(closing: w) }
+            let window = note.object as? NSWindow
+            MainActor.assumeIsolated {
+                guard let w = window, Dashboard.isDashboard(w) else { return }
+                Dashboard.updateActivationPolicy(closing: w)
+            }
         }
         center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
-            guard let w = note.object as? NSWindow, Dashboard.isDashboard(w) else { return }
-            MainActor.assumeIsolated { Dashboard.updateActivationPolicy() }
+            let window = note.object as? NSWindow
+            MainActor.assumeIsolated {
+                guard let w = window, Dashboard.isDashboard(w) else { return }
+                Dashboard.updateActivationPolicy()
+            }
         }
         if LoginItem.launchedInBackground {
             // SwiftUI opens the dashboard window at launch; at login we only want the menu bar item.
             DispatchQueue.main.async {
-                NSApp.windows.filter(Dashboard.isDashboard).forEach { $0.close() }
-                NSApp.setActivationPolicy(.accessory)
+                MainActor.assumeIsolated {
+                    NSApp.windows.filter { Dashboard.isDashboard($0) }.forEach { $0.close() }
+                    NSApp.setActivationPolicy(.accessory)
+                }
             }
         }
     }

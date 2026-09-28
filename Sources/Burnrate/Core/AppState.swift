@@ -212,7 +212,7 @@ final class AppState: ObservableObject {
 // MARK: - CLI verification mode
 
 enum DumpMode {
-    /// `TokenCounter --export out.csv [--db path]`: write all usage rows as CSV.
+    /// `Burnrate --export out.csv [--db path]`: write all usage rows as CSV.
     static func export(dbPath: String, to path: String) {
         let sem = DispatchSemaphore(value: 0)
         Task.detached {
@@ -228,7 +228,7 @@ enum DumpMode {
         sem.wait()
     }
 
-    /// `TokenCounter --dump [--db path]`: ingest everything and print per-source/model totals.
+    /// `Burnrate --dump [--db path]`: ingest everything and print per-source/model totals.
     static func run(dbPath: String) {
         let sem = DispatchSemaphore(value: 0)
         Task.detached {

@@ -121,12 +121,19 @@ struct DashboardData: Sendable {
 // MARK: - Store
 
 actor Store {
-    static var defaultPath: String {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("TokenCounter", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    static let defaultPath: String = {
+        let fm = FileManager.default
+        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = support.appendingPathComponent("Burnrate", isDirectory: true)
+        // The app was called "Token Counter" before 1.0: carry its history over once. The whole
+        // folder moves so the SQLite -wal/-shm files stay with the database.
+        let legacy = support.appendingPathComponent("TokenCounter", isDirectory: true)
+        if !fm.fileExists(atPath: dir.path), fm.fileExists(atPath: legacy.path) {
+            try? fm.moveItem(at: legacy, to: dir)
+        }
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("usage.sqlite").path
-    }
+    }()
 
     private let db: SQLiteDB
     private let claude = ClaudeParser()
@@ -279,7 +286,7 @@ actor Store {
             }
             setMeta("stats_cache_mtime", String(mtime))
         } catch {
-            NSLog("TokenCounter: stats-cache import failed: \(error)")
+            NSLog("Burnrate: stats-cache import failed: \(error)")
         }
         return rows.count
     }
@@ -310,7 +317,7 @@ actor Store {
                            [path, size, mtime, state.offset + consumed, sessionId, cwd])
             }
         } catch {
-            NSLog("TokenCounter: ingest failed for \(path): \(error)")
+            NSLog("Burnrate: ingest failed for \(path): \(error)")
             return 0
         }
         return out.usage.count

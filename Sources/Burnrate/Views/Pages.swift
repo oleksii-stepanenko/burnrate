@@ -321,7 +321,7 @@ struct LimitsPage: View {
 
                 Card(title: "Quota usage over time", subtitle: "Recorded by this app while it runs (last 14 days) · hover for values") {
                     if app.data.limitHistory.isEmpty {
-                        Text("History builds up while Token Counter is running.").foregroundStyle(.secondary)
+                        Text("History builds up while Burnrate is running.").foregroundStyle(.secondary)
                     } else {
                         LimitHistoryChart(points: app.data.limitHistory,
                                           activeKeys: Set(app.providerList.flatMap { $0.windows.map(\.id) }))
@@ -358,10 +358,10 @@ struct HelpPage: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Card(title: "How Token Counter works") {
+                Card(title: "How Burnrate works") {
                     Text("""
                     Everything is read from your disk. The agents already write a log line for every model response, \
-                    including model, token counts and (for pi/omp) cost. Token Counter reads only the new lines, keeps them \
+                    including model, token counts and (for pi/omp) cost. Burnrate reads only the new lines, keeps them \
                     in its own database, and builds the dashboard from that database. Only the quota cards use the network: \
                     they ask Anthropic, GitHub and OpenRouter for your current limits, reusing the logins those tools already have.
                     """)
@@ -370,7 +370,7 @@ struct HelpPage: View {
 
                 Card(title: "Startup", subtitle: "Keep quota history continuous") {
                     LoginItemToggle()
-                    Text("When on, Token Counter starts quietly in the menu bar at login and is restarted automatically if it ever crashes. Quitting it from the menu keeps it closed until the next login.")
+                    Text("When on, Burnrate starts quietly in the menu bar at login and is restarted automatically if it ever crashes. Quitting it from the menu keeps it closed until the next login.")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -450,7 +450,7 @@ struct HelpPage: View {
 
                 Card(title: "Tips") {
                     VStack(alignment: .leading, spacing: 8) {
-                        tip("clock.arrow.circlepath", "Claude Code deletes transcripts after 30 days by default. Token usage is safe as long as Token Counter opens at least once before a file is deleted, because each launch reads everything still on disk. Quota history (the limit percentages) is only recorded while the app is running, so launching it at login gives a continuous record. Setting \"cleanupPeriodDays\" in ~/.claude/settings.json keeps the transcripts themselves longer.")
+                        tip("clock.arrow.circlepath", "Claude Code deletes transcripts after 30 days by default. Token usage is safe as long as Burnrate opens at least once before a file is deleted, because each launch reads everything still on disk. Quota history (the limit percentages) is only recorded while the app is running, so launching it at login gives a continuous record. Setting \"cleanupPeriodDays\" in ~/.claude/settings.json keeps the transcripts themselves longer.")
                         tip("dollarsign.circle", "Claude Code costs are what the same tokens would cost on the pay-as-you-go API. They show the value you get from the subscription, not a bill. Prices live in Pricing.table (Models.swift).")
                         tip("cursorarrow.rays", "Hover charts for details, click a project to see its sessions, click an agent to filter, and select a session or model for more.")
                         tip("menubar.rectangle", "The menu bar shows the Claude 5-hour session percentage. Click it for all quotas and today's totals.")

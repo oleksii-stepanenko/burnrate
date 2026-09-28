@@ -1,27 +1,44 @@
-# Token Counter
+# Burnrate
 
-A native macOS app (SwiftUI + Swift Charts) that tracks token usage across the agentic
-coding tools on this machine: **Claude Code**, **pi**, and **omp** (oh-my-pi). It also
-shows your live Claude subscription limits.
+A native macOS menu-bar app (SwiftUI + Swift Charts) that shows how fast you burn through
+AI coding agents. It tracks token usage and cost across **Claude Code**, **pi** and **omp**
+(oh-my-pi), per model and per day, and shows live plan limits: the Claude 5-hour and weekly
+windows, GitHub Copilot premium requests, and OpenRouter credits.
 
-## Build & run
+## Install
 
 ```sh
-./build.sh            # → dist/Token Counter.app (ad-hoc signed)
-./build.sh --install  # also copies it to /Applications
-open "dist/Token Counter.app"
+brew install --cask oleksii-stepanenko/tap/burnrate
+```
+
+Burnrate is signed with a self-signed certificate and is **not notarized by Apple**, so the
+first time you open it (and after each update) macOS blocks it:
+
+1. Open **System Settings → Privacy & Security**
+2. Scroll to **Security** and click **Open Anyway** next to Burnrate
+3. Confirm with Touch ID or your password
+
+Update with `brew upgrade --cask burnrate`. Uninstall with `brew uninstall --cask burnrate`;
+add `--zap` to also delete the usage history.
+
+## Build from source
+
+```sh
+./scripts/make-app.sh --release            # → build/Burnrate.app (ad-hoc signed)
+./scripts/make-app.sh --release --install  # also copies it to /Applications
 ```
 
 Requires macOS 14+ and Swift 5.10+ (Xcode command line tools). No dependencies.
+Releases are built and signed by GitHub Actions; see [RELEASE.md](RELEASE.md).
 
 ## Open at login
 
 The first time the app runs from `/Applications`, it registers a per-user launch agent
-(`Contents/Library/LaunchAgents/dev.local.tokencounter.agent.plist`, via `SMAppService`).
+(`Contents/Library/LaunchAgents/io.stepanenko.Burnrate.agent.plist`, via `SMAppService`).
 At login it starts in the menu bar only, with no window and no Dock icon. If it crashes,
 launchd restarts it; after a normal Quit it stays closed until the next login. You can
 toggle this in the menu bar panel or on the Help page. It also appears under
-System Settings › General › Login Items. `./build.sh --install` restarts the running
+System Settings › General › Login Items. `./scripts/make-app.sh --install` restarts the running
 login instance so it picks up the new build.
 
 The Dock icon is shown only while the dashboard window is open.
@@ -75,7 +92,7 @@ each provider backs off exponentially, up to 30 minutes.
 
 ## What is stored
 
-`~/Library/Application Support/TokenCounter/usage.sqlite` holds:
+`~/Library/Application Support/Burnrate/usage.sqlite` holds:
 
 - per model response: time, agent, session, project folder, provider, model, input,
   output, cache read/write (5m/1h), reasoning tokens, cost
@@ -91,13 +108,13 @@ in `~/.claude/settings.json` also keeps the transcripts themselves for longer.
 **Cost**: pi and omp costs are what those tools report. Claude Code doesn't log cost, so
 its cost is an *API-equivalent estimate* at list prices, with 5-minute and 1-hour cache
 writes priced separately and fast mode at 2×. That's a yardstick, not a bill. Prices are
-in `Sources/TokenCounter/Core/Models.swift` (`Pricing.table`) and are re-applied to all
+in `Sources/Burnrate/Core/Models.swift` (`Pricing.table`) and are re-applied to all
 history on each launch.
 
 ## CLI
 
 ```sh
-.build/release/TokenCounter --dump [--db /path/to.sqlite]   # ingest + print totals per agent/model + limits
+.build/release/Burnrate --dump [--db /path/to.sqlite]   # ingest + print totals per agent/model + limits
 ```
 
 Dev flags for the app: `--page overview|models|sessions|projects|limits|help`, `--appearance dark|light`, `--scroll-bottom`.

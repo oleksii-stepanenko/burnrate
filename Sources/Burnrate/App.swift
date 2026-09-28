@@ -29,11 +29,11 @@ enum Main {
             UserDefaults.standard.set("en_\(region)", forKey: "AppleLocale")
             UserDefaults.standard.set(["en"], forKey: "AppleLanguages")
         }
-        TokenCounterApp.main()
+        BurnrateApp.main()
     }
 }
 
-struct TokenCounterApp: App {
+struct BurnrateApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var app = AppState()
 
@@ -47,7 +47,7 @@ struct TokenCounterApp: App {
     }
 
     var body: some Scene {
-        Window("Token Counter", id: "dashboard") {
+        Window("Burnrate", id: "dashboard") {
             ContentView()
                 .environmentObject(app)
                 .frame(minWidth: 980, minHeight: 680)
@@ -209,7 +209,7 @@ struct MenuBarPanel: View {
     var body: some View {
         let today = app.allTime.today
         VStack(alignment: .leading, spacing: 12) {
-            Text("Token Counter").font(.headline)
+            Text("Burnrate").font(.headline)
 
             ForEach(app.providerList) { p in
                 VStack(alignment: .leading, spacing: 8) {
@@ -275,7 +275,7 @@ struct MenuBarPanel: View {
                 Button { app.refreshAll() } label: { Image(systemName: "arrow.clockwise") }
                     .help("Refresh")
                 Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
-                    .help("Quit Token Counter")
+                    .help("Quit Burnrate")
             }
         }
         .padding(16)

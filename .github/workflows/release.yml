@@ -1,0 +1,186 @@
+name: Build & Release
+
+# Build a .dmg on every tag (v1.0.0, …) and attach it to the GitHub Release.
+# You can also run it manually to get a downloadable build artifact.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # macOS runner is required (swift build + codesign + hdiutil), and the cask
+    # bump below uses BSD `sed -i ''`.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use the latest installed Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)"
+
+      - name: Derive version from tag
+        id: ver
+        run: |
+          # On a tag build use the tag (v1.0.3 -> 1.0.3); manual runs get 0.0.0
+          # so the workflow still produces an artifact to inspect.
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+          else
+            VER="0.0.0"
+          fi
+          echo "marketing=$VER" >> "$GITHUB_OUTPUT"
+          echo "Building version $VER (build ${GITHUB_RUN_NUMBER})"
+
+      - name: Build the app
+        env:
+          BURNRATE_VERSION: ${{ steps.ver.outputs.marketing }}
+          BURNRATE_BUILD: ${{ github.run_number }}
+        run: ./scripts/make-app.sh --release
+
+      - name: Smoke-test the binary
+        # --dump ingests whatever logs exist (none on the runner) and exits; it
+        # proves the binary launches and the database layer works.
+        run: '"build/Burnrate.app/Contents/MacOS/Burnrate" --dump --db "$RUNNER_TEMP/smoke.sqlite"'
+
+      - name: Verify version baked into the app
+        run: |
+          PLIST="build/Burnrate.app/Contents/Info.plist"
+          GOT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          echo "CFBundleShortVersionString = $GOT"
+          [ "$GOT" = "${{ steps.ver.outputs.marketing }}" ] || {
+            echo "::error::Info.plist version $GOT != expected ${{ steps.ver.outputs.marketing }}"; exit 1; }
+
+      - name: Verify the icon and login agent made it into the bundle
+        run: |
+          test -f "build/Burnrate.app/Contents/Resources/AppIcon.icns" || {
+            echo "::error::AppIcon.icns missing from the bundle"; exit 1; }
+          plutil -lint "build/Burnrate.app/Contents/Library/LaunchAgents/io.stepanenko.Burnrate.agent.plist" || {
+            echo "::error::launch agent plist missing or invalid"; exit 1; }
+
+      - name: Code-sign
+        # Two modes:
+        #   • If SIGNING_CERTIFICATE_P12 / _PASSWORD secrets are set, sign with a
+        #     stable self-signed identity. Its designated requirement is tied to
+        #     the certificate (not the per-build cdhash), so macOS treats every
+        #     update as the *same* app — the login item and any user approvals
+        #     carry over between versions.
+        #   • Otherwise fall back to ad-hoc (--sign -). The app still runs after
+        #     clearing quarantine, but each update looks like a new app to macOS.
+        env:
+          P12: ${{ secrets.SIGNING_CERTIFICATE_P12 }}
+          P12_PWD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APP="build/Burnrate.app"
+
+          if [ -n "${P12:-}" ]; then
+            echo "Signing with the self-signed certificate (stable identity)."
+            KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+            KPWD="ci-$GITHUB_RUN_ID"
+            security create-keychain -p "$KPWD" "$KEYCHAIN"
+            security set-keychain-settings -lut 21600 "$KEYCHAIN"
+            security unlock-keychain -p "$KPWD" "$KEYCHAIN"
+
+            echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+              -P "$P12_PWD" -T /usr/bin/codesign -T /usr/bin/security
+            # Let codesign use the key without an interactive prompt.
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KPWD" "$KEYCHAIN" >/dev/null
+            security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+            # Reference the identity by its SHA-1 hash. A self-signed cert is not
+            # "policy-valid" (no trust chain), so `find-identity -v` would skip it;
+            # without -v it's listed and signable by hash.
+            IDENTITY="$(security find-identity -p codesigning "$KEYCHAIN" | grep -oE '[0-9A-F]{40}' | head -1)"
+            if [ -z "$IDENTITY" ]; then
+              echo "::error::No code-signing identity found in the imported keychain (check the .p12 secret)."
+              exit 1
+            fi
+            echo "Using identity: $IDENTITY"
+            codesign --force --deep \
+              --sign "$IDENTITY" --keychain "$KEYCHAIN" "$APP"
+
+            # The check that matters: the designated requirement must be tied to
+            # the certificate, NOT a per-build cdhash. (--verify passes for ad-hoc
+            # too, so it can't tell us this.)
+            codesign -d -r- "$APP"
+            if codesign -d -r- "$APP" 2>&1 | grep -q 'cdhash'; then
+              echo "::error::Designated requirement is cdhash-based — identity not applied."
+              exit 1
+            fi
+          else
+            echo "No signing certificate secret set — falling back to ad-hoc signing."
+            echo "::warning::Ad-hoc signed: every update looks like a new app to macOS. Add SIGNING_CERTIFICATE_P12/_PASSWORD secrets to fix."
+            codesign --force --deep --sign - "$APP"
+          fi
+
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Package .dmg
+        # The filename here must match the `url` in the Homebrew cask.
+        run: |
+          set -euo pipefail
+          STAGE="dist/dmg"
+          mkdir -p "$STAGE"
+          cp -R "build/Burnrate.app" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname "Burnrate" -srcfolder "$STAGE" \
+            -ov -format UDZO dist/Burnrate.dmg
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Burnrate-dmg
+          path: dist/Burnrate.dmg
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Burnrate.dmg
+          generate_release_notes: true
+
+      - name: Bump Homebrew cask
+        # Points oleksii-stepanenko/homebrew-tap at this release so
+        # `brew install --cask …/burnrate` gets the new version. Cross-repo
+        # push needs a PAT (the default GITHUB_TOKEN is scoped to this repo
+        # only); without the secret this step no-ops, like the signing step.
+        #
+        # NOTE: Casks/burnrate.rb must already exist in the tap — this step
+        # only rewrites its version and sha256.
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::notice::No TAP_GITHUB_TOKEN secret — skipping cask bump. Add a PAT with write access to homebrew-tap to automate it."
+            exit 0
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA="$(shasum -a 256 dist/Burnrate.dmg | awk '{print $1}')"
+          echo "Bumping cask to ${VERSION} (sha256 ${SHA})"
+
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/oleksii-stepanenko/homebrew-tap.git" tap
+          CASK="tap/Casks/burnrate.rb"
+          if [ ! -f "$CASK" ]; then
+            echo "::error::$CASK not found in the tap. Copy packaging/homebrew/burnrate.rb into the tap first."
+            exit 1
+          fi
+          sed -i '' -E "s/^  version \".*\"/  version \"${VERSION}\"/" "$CASK"
+          sed -i '' -E "s/^  sha256 \".*\"/  sha256 \"${SHA}\"/" "$CASK"
+
+          cd tap
+          if git diff --quiet; then
+            echo "Cask already at ${VERSION} — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -aqm "burnrate ${VERSION}"
+          git push -q
+          echo "Cask bumped to ${VERSION}."

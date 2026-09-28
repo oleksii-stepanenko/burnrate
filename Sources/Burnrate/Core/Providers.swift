@@ -108,7 +108,7 @@ private func getJSON(_ url: String, headers: [String: String]) async -> (Int, [S
     var req = URLRequest(url: URL(string: url)!)
     req.timeoutInterval = 20
     req.setValue("application/json", forHTTPHeaderField: "Accept")
-    req.setValue("TokenCounter/1.0", forHTTPHeaderField: "User-Agent")
+    req.setValue("Burnrate/1.0", forHTTPHeaderField: "User-Agent")
     for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
     guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return (0, nil) }
     return ((resp as? HTTPURLResponse)?.statusCode ?? 0, try? JSONSerialization.jsonObject(with: data) as? [String: Any])

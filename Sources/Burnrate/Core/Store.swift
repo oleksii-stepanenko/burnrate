@@ -140,7 +140,11 @@ actor Store {
     private let pi = PiParser()
     private let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-    init(path: String = Store.defaultPath) throws {
+    /// Demo stores read no session logs; they are filled by `seedDemo()`.
+    private let demo: Bool
+
+    init(path: String = Store.defaultPath, demo: Bool = false) throws {
+        self.demo = demo
         db = try SQLiteDB(path: path)
         try db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
         try db.exec("""
@@ -174,13 +178,14 @@ actor Store {
     private struct FileState { var size: Int; var mtime: Double; var offset: Int; var sessionId: String?; var cwd: String? }
 
     private var roots: [(Source, String)] {
-        [(.claude, "\(home)/.claude/projects"),
+        demo ? [] : [(.claude, "\(home)/.claude/projects"),
          (.pi, "\(home)/.pi/agent/sessions"),
          (.omp, "\(home)/.omp/agent/sessions")]
     }
 
     func installedSources() -> [Source] {
-        roots.filter { FileManager.default.fileExists(atPath: $0.1) }.map(\.0)
+        if demo { return Source.allCases }
+        return roots.filter { FileManager.default.fileExists(atPath: $0.1) }.map(\.0)
     }
 
     /// Reads any new bytes appended to session files. Returns the number of new usage rows.
@@ -214,7 +219,7 @@ actor Store {
                 added += ingestFile(path: path, root: root, source: source, size: size, mtime: mtime, state: state)
             }
         }
-        added += importClaudeStatsCache()
+        if !demo { added += importClaudeStatsCache() }
         return added
     }
 
@@ -382,6 +387,17 @@ actor Store {
                     * (CASE WHEN fast=1 THEN ? ELSE 1 END)
                 WHERE cost_estimated=1 AND model=?
                 """, [r.input, r.output, r.cacheRead, r.write5m, r.write1h, Pricing.fastMultiplier, m])
+            }
+        }
+    }
+
+    func seedDemo() {
+        let data = Demo.generate()
+        try? db.transaction {
+            try write(data)
+            for (ts, provider, w) in Demo.snapshots() {
+                try db.run("INSERT OR REPLACE INTO limit_snapshots(ts,provider,key,label,percent,resets_at,used,total) VALUES(?,?,?,?,?,?,?,?)",
+                           [ts.timeIntervalSince1970, provider, w.id, w.label, w.percent, nil, nil, nil])
             }
         }
     }

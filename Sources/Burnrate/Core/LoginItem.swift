@@ -30,7 +30,7 @@ enum LoginItem {
     /// Turns the login item on the first time the app runs from /Applications;
     /// after that the user's choice is respected.
     static func enableOnFirstRun() {
-        guard Bundle.main.bundlePath.hasPrefix("/Applications/"),
+        guard !Demo.isOn, Bundle.main.bundlePath.hasPrefix("/Applications/"),
               !UserDefaults.standard.bool(forKey: configuredKey) else { return }
         do {
             try setEnabled(true)

@@ -49,7 +49,7 @@ final class AppState: ObservableObject {
 
     init() {
         do {
-            store = try Store()
+            store = try Demo.isOn ? Store(path: Demo.databasePath, demo: true) : Store()
         } catch {
             storeError = "\(error)"
         }
@@ -70,6 +70,12 @@ final class AppState: ObservableObject {
     private func start() async {
         guard let store else { return }
         installed = await store.installedSources()
+        if Demo.isOn {
+            await store.seedDemo()
+            providers = Demo.providers()
+            await scan(force: true)
+            return
+        }
         // Show the last saved readings immediately; live ones replace them as they arrive.
         for kind in ProviderKind.allCases {
             if let (ts, windows) = await store.latestLimits(provider: kind.rawValue) {
@@ -108,6 +114,7 @@ final class AppState: ObservableObject {
     func refreshAll() {
         Task {
             await scan(force: true)
+            if Demo.isOn { return }
             let now = Date()
             for kind in ProviderKind.allCases
             where now.timeIntervalSince(lastAttempt[kind] ?? .distantPast) >= Refresh.manualMinimum {

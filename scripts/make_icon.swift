@@ -2,9 +2,13 @@
 import AppKit
 
 let out = CommandLine.arguments[1]
-let colors: [NSColor] = [0x2A78D6, 0xEB6834, 0x1BAF7A, 0xEDA100].map {
-    NSColor(srgbRed: CGFloat(($0 >> 16) & 0xFF) / 255, green: CGFloat(($0 >> 8) & 0xFF) / 255, blue: CGFloat($0 & 0xFF) / 255, alpha: 1)
+func color(_ hex: UInt32) -> NSColor {
+    let r = CGFloat((hex >> 16) & 0xFF) / 255
+    let g = CGFloat((hex >> 8) & 0xFF) / 255
+    let b = CGFloat(hex & 0xFF) / 255
+    return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
 }
+let colors: [NSColor] = [color(0x2A78D6), color(0xEB6834), color(0x1BAF7A), color(0xEDA100)]
 
 func render(_ px: Int) -> Data {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
